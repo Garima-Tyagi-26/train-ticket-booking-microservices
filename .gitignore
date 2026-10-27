@@ -1,0 +1,12 @@
+﻿**/target/
+**/build/
+*.class
+.metadata/
+**/.settings/
+**/.project
+**/.classpath
+**/.idea/
+**/*.iml
+.env
+.env.*
+!.env.example
