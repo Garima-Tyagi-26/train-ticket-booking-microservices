@@ -5,6 +5,7 @@ public class PassengerRequest {
 	private String name;
     private Integer age;
     private String gender;
+    private Integer seatNumber;
 
     public PassengerRequest() {}
 
@@ -31,6 +32,13 @@ public class PassengerRequest {
 	public void setGender(String gender) {
 		this.gender = gender;
 	}
-    
+
+	public Integer getSeatNumber() {
+		return seatNumber;
+	}
+
+	public void setSeatNumber(Integer seatNumber) {
+		this.seatNumber = seatNumber;
+	}
     
 }

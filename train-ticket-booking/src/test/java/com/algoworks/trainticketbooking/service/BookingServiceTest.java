@@ -71,12 +71,13 @@ public class BookingServiceTest {
         return train;
     }
 
-    private PassengerRequest createPassenger(String name, int age, String gender) {
+    private PassengerRequest createPassenger(String name, int age, String gender, int seatNumber) {
 
         PassengerRequest passenger = new PassengerRequest();
         passenger.setName(name);
         passenger.setAge(age);
         passenger.setGender(gender);
+        passenger.setSeatNumber(seatNumber);
         return passenger;
     }
     
@@ -91,9 +92,9 @@ public class BookingServiceTest {
 
       Train train = createTrain(trainId, 10);
 
-      PassengerRequest passenger1 = createPassenger("Rahul", 25, "Male");
+      PassengerRequest passenger1 = createPassenger("Rahul", 25, "Male", 12);
 
-      PassengerRequest passenger2 = createPassenger("Priya", 23, "Female");
+      PassengerRequest passenger2 = createPassenger("Priya", 23, "Female", 13);
 
       BookingRequest request = new BookingRequest();
       request.setTrainId(trainId);
@@ -137,7 +138,7 @@ public class BookingServiceTest {
        // Arrange
        Long trainId = 99L;
 
-       PassengerRequest passenger = createPassenger("Rahul", 25, "Male");
+       PassengerRequest passenger = createPassenger("Rahul", 25, "Male", 14);
 
        BookingRequest request = new BookingRequest();
        request.setTrainId(trainId);
@@ -200,9 +201,9 @@ public class BookingServiceTest {
 
         Train train = createTrain(trainId, 10);
 
-        PassengerRequest passenger1 = createPassenger("Rahul", 25, "Male");
+        PassengerRequest passenger1 = createPassenger("Rahul", 25, "Male", 15);
 
-        PassengerRequest passenger2 = createPassenger("Priya", 23, "Female");
+        PassengerRequest passenger2 = createPassenger("Priya", 23, "Female", 16);
 
         BookingRequest request = new BookingRequest();
         request.setTrainId(trainId);
@@ -242,5 +243,28 @@ public class BookingServiceTest {
         verifyNoInteractions(trainRepository, bookingRepository);
     }
  
+    
+    @Test
+    void getBookingHistory_shouldQueryUsingAuthenticatedUserId() {
+
+      // Arrange : create an authenticated user with ID 101 and prepare a sample booking.
+      Authentication authentication = createAuthentication();
+
+      Booking booking = new Booking();
+      booking.setUserId(101L);
+
+      when(bookingRepository.findByUserId(101L)).thenReturn(List.of(booking));
+
+      // Act : call getBookingHistory() with that user's authentication.
+      List<Booking> history = bookingService.getBookingHistory(authentication);
+
+      // Assert : check that the returned history contains the expected booking.
+      assertEquals(1, history.size());
+      assertSame(booking, history.get(0));
+
+      // confirm the repository was queried using user ID 101.
+      verify(bookingRepository).findByUserId(101L);
+     }
+
 }
 

@@ -1,5 +1,6 @@
 package com.algoworks.trainticketbooking.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -15,18 +16,23 @@ public class Passenger {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
+	
 	private String name;
 	private Integer age;
 	private String gender;
 	
+	@Column(name = "seat_number")
+	private Integer seatNumber;
+	
 	public Passenger() {}
 
-	public Passenger(Long id, String name, Integer age, String gender) {
+	public Passenger(Long id, String name, Integer age, String gender, Integer seatNumber) {
 		super();
 		this.id = id;
 		this.name = name;
 		this.age = age;
 		this.gender = gender;
+		this.seatNumber = seatNumber;
 	}
 	
 	@ManyToOne
@@ -72,6 +78,14 @@ public class Passenger {
 
 	public void setBooking(Booking booking) {
 		this.booking = booking;
+	}
+
+	public Integer getSeatNumber() {
+		return seatNumber;
+	}
+
+	public void setSeatNumber(Integer seatNumber) {
+		this.seatNumber = seatNumber;
 	}
 	
 	

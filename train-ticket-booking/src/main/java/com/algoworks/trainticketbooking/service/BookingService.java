@@ -3,7 +3,9 @@ package com.algoworks.trainticketbooking.service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,7 @@ import com.algoworks.trainticketbooking.entity.Booking;
 import com.algoworks.trainticketbooking.entity.Passenger;
 import com.algoworks.trainticketbooking.entity.Train;
 import com.algoworks.trainticketbooking.repository.BookingRepository;
+import com.algoworks.trainticketbooking.repository.SeatReservationRepository;
 import com.algoworks.trainticketbooking.repository.TrainRepository;
 
 import tools.jackson.databind.ObjectMapper;
@@ -29,6 +32,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class BookingService {
 
+	private final SeatReservationRepository seatReservationRepository;
     private final ObjectMapper objectMapper;
     private final MemcachedService memcachedService;
     private final TrainRepository trainRepository;
@@ -36,12 +40,14 @@ public class BookingService {
 
     
     public BookingService(BookingRepository bookingRepository, TrainRepository trainRepository,
-                          MemcachedService memcachedService, ObjectMapper objectMapper) {
+                          MemcachedService memcachedService, ObjectMapper objectMapper, 
+                          SeatReservationRepository seatReservationRepository) {
 
         this.bookingRepository = bookingRepository;
         this.trainRepository = trainRepository;
         this.memcachedService = memcachedService;
         this.objectMapper = objectMapper;
+        this.seatReservationRepository = seatReservationRepository;
     }
 
     
@@ -66,6 +72,7 @@ public class BookingService {
     @Transactional
     public BookingResponse createBooking(BookingRequest request, Authentication authentication) {
 
+    	// gets the ID of the logged-in user
         Long userId = getAuthenticatedUserId(authentication);
 
         Train train = trainRepository.findById(request.getTrainId())
@@ -75,7 +82,26 @@ public class BookingService {
         if (request.getPassengers() == null || request.getPassengers().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one passenger is required");
         }
-
+        
+        // Validating the selected seats
+        Set<Integer> selectedSeats = new HashSet<>();
+        
+        for (PassengerRequest passenger : request.getPassengers()) {
+        	Integer seatNumber = passenger.getSeatNumber();
+        	
+        	// check that every passenger has a seat number and numbers are positive
+        	if(seatNumber == null || seatNumber<=0) {
+        		throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
+        				"A valid seat number is required for each passenger");
+        	}
+        	
+        	// two passengers in the same booking cannot select the same seat.
+        	if(!selectedSeats.add(seatNumber)) {
+        		throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+        				"Duplicate seat numbers are not allowed");
+        	}
+        }
+        
         int numberOfPassengers = request.getPassengers().size();
 
         int updatedRows = trainRepository.reduceSeatsIfAvailable(request.getTrainId(), numberOfPassengers);
@@ -110,6 +136,7 @@ public class BookingService {
             passenger.setName(passengerRequest.getName());
             passenger.setAge(passengerRequest.getAge());
             passenger.setGender(passengerRequest.getGender());
+            passenger.setSeatNumber(passengerRequest.getSeatNumber());
             passenger.setBooking(booking);
 
             passengers.add(passenger);
