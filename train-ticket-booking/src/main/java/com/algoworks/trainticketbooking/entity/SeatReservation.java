@@ -34,6 +34,10 @@ public class SeatReservation {
 	@JoinColumn(name = "train_id", nullable = false)  
 	private Train train;
 	
+	// userId identifies who created the hold.
+	@Column(name = "user_id", nullable = false)
+	private Long userId;
+	
 	@Column(name = "seat_number", nullable = false)
 	private Integer seatNumber;
 	
@@ -82,6 +86,14 @@ public class SeatReservation {
 
 	public void setHoldExpiresAt(LocalDateTime holdExpiresAt) {
 		this.holdExpiresAt = holdExpiresAt;
+	}
+
+	public Long getUserId() {
+		return userId;
+	}
+
+	public void setUserId(Long userId) {
+		this.userId = userId;
 	}
 	
 }

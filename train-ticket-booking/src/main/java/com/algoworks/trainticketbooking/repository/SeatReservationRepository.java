@@ -2,6 +2,7 @@ package com.algoworks.trainticketbooking.repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -21,4 +22,12 @@ public interface SeatReservationRepository extends JpaRepository<SeatReservation
 
 	List<SeatReservation> findByTrainAndStatusAndHoldExpiresAtAfter(Train train, String status, LocalDateTime now);
     // retrieves reservations for that train with the specified status and an expire time later than the current time.
+	
+	Optional<SeatReservation> findByTrainAndSeatNumberAndUserIdAndStatus(Train train, Integer seatNumber, Long userID, String status);
+	/* this query can find a reservation matching all four conditions:
+	   - the specified train
+	   - the selected seat number
+	   - the authenticated user's ID
+	   - the reservation status
+	*/
 }

@@ -2,6 +2,7 @@ package com.algoworks.trainticketbooking.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,6 +24,7 @@ import com.algoworks.trainticketbooking.dto.PassengerRequest;
 import com.algoworks.trainticketbooking.dto.PassengerResponse;
 import com.algoworks.trainticketbooking.entity.Booking;
 import com.algoworks.trainticketbooking.entity.Passenger;
+import com.algoworks.trainticketbooking.entity.SeatReservation;
 import com.algoworks.trainticketbooking.entity.Train;
 import com.algoworks.trainticketbooking.repository.BookingRepository;
 import com.algoworks.trainticketbooking.repository.SeatReservationRepository;
@@ -83,23 +86,41 @@ public class BookingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one passenger is required");
         }
         
-        // Validating the selected seats
+        // Validates the booking request
         Set<Integer> selectedSeats = new HashSet<>();
         
         for (PassengerRequest passenger : request.getPassengers()) {
         	Integer seatNumber = passenger.getSeatNumber();
         	
-        	// check that every passenger has a seat number and numbers are positive
+        	// Checks that every passenger has a valid, positive seat number
         	if(seatNumber == null || seatNumber<=0) {
         		throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
         				"A valid seat number is required for each passenger");
         	}
         	
-        	// two passengers in the same booking cannot select the same seat.
+        	// Prevents two passengers in the same booking from selecting the same seat
         	if(!selectedSeats.add(seatNumber)) {
         		throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
         				"Duplicate seat numbers are not allowed");
         	}
+        }
+        
+        // Stores the seat holds that have passed validation.
+        List<SeatReservation> seatReservationsToConfirm = new ArrayList<>();       
+        
+        // Verify that each selected seat has an active hold belonging to this user.
+        for(PassengerRequest passenger : request.getPassengers()) {
+        	
+        	SeatReservation reservation = seatReservationRepository
+        			.findByTrainAndSeatNumberAndUserIdAndStatus(train, passenger.getSeatNumber(), userId, "HELD")
+        			.orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Seat is not held by this user"));
+        
+        	if (reservation.getHoldExpiresAt() == null || !reservation.getHoldExpiresAt().isAfter(LocalDateTime.now())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat hold has expired");
+        	}
+        	
+        	// Stores the validated reservation for confirmation later.
+            seatReservationsToConfirm.add(reservation);
         }
         
         int numberOfPassengers = request.getPassengers().size();
@@ -146,9 +167,89 @@ public class BookingService {
 
         Booking savedBooking = bookingRepository.save(booking);
 
+        // Confirm all validated seat holds.
+        for (SeatReservation reservation : seatReservationsToConfirm) {
+            reservation.setStatus("CONFIRMED");
+        }
+
+        seatReservationRepository.saveAll(seatReservationsToConfirm);
+        
         return toBookingResponse(savedBooking);
     }
 
+    
+    
+    // Manages temporary seat reservations.
+    @Transactional
+    public SeatReservation holdSeat(Long trainId, Integer seatNumber, Authentication authentication) {
+    	
+    	Long userId  = getAuthenticatedUserId(authentication);
+    	
+    	Train train = trainRepository.findById(trainId)
+    			.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Train not found"));
+    	
+    	if(seatNumber==null || seatNumber<=0  || seatNumber > train.getTotalSeats()) {
+    		throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid seat number for this Train");
+    	}
+    	
+    	LocalDateTime now = LocalDateTime.now();
+    	
+    	List<SeatReservation> activeHolds = seatReservationRepository
+    			.findByTrainAndStatusAndHoldExpiresAtAfter(train, "HELD", now); 
+    	
+    	// Checks whether the seat has an active temporary hold.
+    	boolean alreadyHeld = activeHolds.stream()
+    			.anyMatch(reservation -> reservation.getSeatNumber().equals(seatNumber)); 
+    	
+    	// Checks whether the seat is already confirmed.
+    	boolean alreadyConfirmed = seatReservationRepository.findByTrainAndStatus(train, "CONFIRMED")
+    			.stream().anyMatch(reservation -> reservation.getSeatNumber().equals(seatNumber));
+    	
+    	if (alreadyConfirmed || alreadyHeld) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat is not available");
+		}
+    	
+    	// If available, saves a HELD reservation that expires after five minutes.
+    	SeatReservation reservation = new SeatReservation();
+    	reservation.setTrain(train);
+    	reservation.setSeatNumber(seatNumber);
+    	reservation.setStatus("HELD");
+    	reservation.setHoldExpiresAt(now.plusMinutes(5));
+    	reservation.setUserId(userId);
+    	
+    	return seatReservationRepository.save(reservation);
+    }
+    
+    
+    
+   // confirming seat hold
+    @Transactional
+    public SeatReservation confirmSeatHold(Long trainId, Integer seatNumber, Authentication authentication) {
+    	
+    	// Gets the user ID from the authenticated JWT
+    	Long userId = getAuthenticatedUserId(authentication);
+    	
+    	// Finds the train
+    	Train train = trainRepository.findById(trainId)
+    			.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Train not found"));
+    	
+    	// Finds the seat hold for this train and seat, belonging to the authenticated user
+    	SeatReservation reservation = seatReservationRepository
+    			.findByTrainAndSeatNumberAndUserIdAndStatus(train, seatNumber, userId, "HELD")
+    			.orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "No active seat hold found for this user"));
+    	
+    	// Rejects the reservation if its hold has expired.
+    	if(reservation.getHoldExpiresAt()==null || !reservation.getHoldExpiresAt().isAfter(LocalDateTime.now())) {
+    		throw new ResponseStatusException(HttpStatus.CONFLICT, "Seat hold has expired");
+    	}
+    	
+    	// Changes the status to CONFIRMED.
+    	reservation.setStatus("CONFIRMED");
+    	
+    	return seatReservationRepository.save(reservation);
+    }
+    
+    
     
     // Convert Booking entity to response DTO
     private BookingResponse toBookingResponse(Booking booking) {
@@ -180,6 +281,7 @@ public class BookingService {
         return response;
     }
 
+    
     
     // Find booking using PNR, with Mem-cached
     public BookingResponse getBookingByPnr(String pnr) {
@@ -214,6 +316,7 @@ public class BookingService {
     }
 
     
+    
     // Get only the authenticated user's booking history
     public List<Booking> getBookingHistory(Authentication authentication) {
 
@@ -222,6 +325,7 @@ public class BookingService {
         return bookingRepository.findByUserId(userId);
     }
 
+    
     
     // Get a booking only if it belongs to the authenticated user
     public Booking getBooking(Long bookingId, Authentication authentication) {
@@ -239,6 +343,7 @@ public class BookingService {
         return booking;
     }
 
+    
     
     // Cancel a booking and restore its available seats
     @Transactional
